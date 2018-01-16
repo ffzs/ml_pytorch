@@ -1,0 +1,108 @@
+﻿import torch
+from torch.autograd import Variable
+import torch.nn.functional as F
+import numpy as np
+import visdom
+import time
+from torch import nn, optim
+
+viz = visdom.Visdom()
+colors = np.random.randint(0,255,(4,3))
+
+use_gpu = True
+
+ones = np.ones((500,2))
+x1 = torch.normal(6*torch.from_numpy(ones),2)
+y1 = torch.zeros(500)
+x2 = torch.normal(6*torch.from_numpy(ones*[-1,1]),2)
+y2 = y1 +1
+x3 = torch.normal(-6*torch.from_numpy(ones),2)
+y3 = y1 +2
+x4 = torch.normal(6*torch.from_numpy(ones*[1,-1]),2)
+y4 = y1 +3
+
+x = torch.cat((x1, x2, x3 ,x4), 0).type(torch.FloatTensor)  # FloatTensor = 32-bit floating
+y = torch.cat((y1, y2, y3, y4), ).type(torch.LongTensor)
+
+line = viz.line(X=np.arange(1,10,1), Y=np.arange(1,10,1))
+time.sleep(0.1)
+scatter = viz.scatter(
+    X=x,
+    Y=y+1,
+    opts=dict(
+        markercolor = colors,
+        marksize = 5,
+        legend=["0","1","2","3"]
+    ),
+)
+time.sleep(0.1)
+viz.scatter(
+    X=x,
+    Y=y+1,
+    opts=dict(
+        markercolor = colors,
+        marksize = 5,
+        legend=["0","1","2","3"]
+    ),
+)
+text = viz.text("FOR TEST")
+
+# logstic = nn.Sequential(
+#     nn.Linear(2,4)
+# )
+
+net = nn.Sequential(
+    nn.Linear(2, 10),
+    nn.ReLU(),
+    nn.Linear(10, 4)
+)
+
+if use_gpu:
+    gpu_status = torch.cuda.is_available()
+    if gpu_status:
+        # logstic = logstic.cuda()
+        net = net.cuda()
+        print("###############使用gpu##############")
+    else : print("###############使用cpu##############")
+else:
+    gpu_status = False
+    print("###############使用cpu##############")
+
+loss_f = nn.CrossEntropyLoss()
+# optimizer_l = optim.SGD(logstic.parameters(), lr=0.001)
+optimizer_n = optim.SGD(net.parameters(), lr=0.001)
+
+start_time = time.time()
+time_point, loss_point, accuracy_point = [], [], []
+for t in range(2000):
+    if gpu_status:
+        train_x = Variable(x).cuda()
+        train_y = Variable(y).cuda()
+    else:
+        train_x = Variable(x)
+        train_y = Variable(y)
+    out = net(train_x)
+    out_l = net(train_x)
+    loss = loss_f(out_l,train_y)
+    optimizer_n.zero_grad()
+    loss.backward()
+    optimizer_n.step()
+    if t % 10 == 0:
+        prediction = torch.max(F.softmax(out_l, 1), 1)[1]
+        pred_y = prediction.data
+        accuracy = sum(pred_y ==train_y.data)/float(2000.0)
+        loss_point.append(loss.data[0])
+        accuracy_point.append(accuracy)
+        time_point.append(time.time()-start_time)
+        print("[{}/{}] | accuracy : {:.3f} | loss : {:.3f} | time : {:.2f} ".format(t , 2000, accuracy, loss.data[0],
+                                                                        time.time() - start_time))
+        viz.line(X=np.column_stack((np.array(time_point),np.array(time_point))),
+                 Y=np.column_stack((np.array(loss_point),np.array(accuracy_point))),
+                 win=line,
+                 opts=dict(legend=["loss", "accuracy"]))
+        viz.scatter(X=train_x.cpu().data, Y=pred_y.cpu()+1, win=scatter,name="add",
+                    opts=dict(markercolor=colors,legend=["0", "1", "2", "3"]))
+        viz.text("<h3 align='center' style='color:blue'>accuracy : {}</h3><br><h3 align='center' style='color:pink'>"
+                 "loss : {:.4f}</h3><br><h3 align ='center' style='color:green'>time : {:.1f}</h3>"
+                 .format(accuracy,loss.data[0],time.time()-start_time),win =text)
+# input("anything:")
